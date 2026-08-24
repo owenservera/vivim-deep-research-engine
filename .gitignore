@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build / output
+dist/
+build/
+.out/
+*.log
+
+# Environment
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Temporary / session working files
+.session/
+.tmp/
+*.tmp
+
+# Large compressed backups in archive (preserve manifest only)
+archive/original-ideation/*.zip
+archive/original-ideation/files/*.zip
+archive/original-ideation/files (1)/*.zip
+archive/original-ideation/files (2)/*.zip
+
+# Runtime artifacts (not part of framework source)
+archive/original-ideation/.runtime/

@@ -1,0 +1,8 @@
+{
+  "total": 120,
+  "iteration": 0,
+  "context_note": "standard=120K safe (default). max=1M advertised / 600K real (Muse Spark). Toggle: pwsh scripts/set-context-budget.ps1 max|standard  See CONTEXT-BUDGET.md",
+  "context_mode": "max",
+  "context_ceiling": 1000000,
+  "context_effective": 600000
+}

@@ -1,0 +1,57 @@
+{
+  "framework_version": "1.0.0-formalized",
+  "framework_owner": "Kilo (agent, first ownership)",
+  "original_workspace": "C:\\0-BlackBoxProject-0\\ideation",
+  "archive_path": "archive/original-ideation",
+  "target_repo_path": "project/",
+  "projects_path": "projects/",
+  "archived_project_path": "projects/vivim-final/archived-session/",
+  "session_id": "generic-deep-research-2026-08-24",
+  "audit_reference": "archive/original-ideation/AUDIT_OUTPUT-2026-08-24.md",
+  "note_independence": "This workspace is independent of any past audit. The previous vivim-final session is preserved at projects/vivim-final/archived-session/. New audits should initialize session/ with fresh framing and point framework.json target_repo_path to the new repo.",
+
+  "budget": {
+    "total_budget_percent": 120,
+    "budget_spent_percent": 124,
+    "budget_checkpoints": [25, 50, 75, 100],
+    "note": "Over budget by 4% — finished last queued target at user request. See OWNER.md § Budget."
+  },
+
+  "agent_roles": {
+    "generator": { "count_ratio": 0.20, "master_path": "framework/core/agents/generator.md" },
+    "extender": { "count_ratio": 0.20, "master_path": "framework/core/agents/extender.md" },
+    "validator": { "count_ratio": 0.20, "master_path": "framework/core/agents/validator.md" },
+    "literature": { "count_ratio": 0.15, "master_path": "framework/core/agents/literature.md" },
+    "synthesizer": { "count_ratio": 0.05, "master_path": "framework/core/agents/synthesizer.md" },
+    "blindspot": { "count_ratio": 0.05, "master_path": "framework/core/agents/blindspot.md" }
+  },
+
+  "session_config": {
+    "framing_template": "framework/templates/FRAMING.md",
+    "output_template": "framework/templates/OUTPUT.md",
+    "deadends_path": "session/deadends.md",
+    "candidates_dir": "session/02-candidates/",
+    "repros_dir": "session/03-repros/",
+    "verified_dir": "session/04-verified/",
+    "state_dir": "session/state/",
+    "opencode_dir": "session/.opencode/"
+  },
+
+  "hazard_seed_ids": [
+    "H1", "H2", "H3", "H4", "H5", "H6", "H7", "H8", "H9", "H10",
+    "H11", "H12", "H13", "H14", "H15"
+  ],
+  "hazards_path": "project/HAZARDS.md",
+
+  "evidence_chain_rules": [
+    "Every audit claim links to archive/manifest.md entry.",
+    "Every repro harness links to session/03-repros/.",
+    "Every verified fix links to session/04-verified/ + repros/ + output.md."
+  ],
+
+  "portability_notes": [
+    "No absolute paths (C:\\...) in framework/core/, framework/scripts/, deploy/.",
+    "All script paths use relative tokens from framework.json (e.g., $(target_repo_path)).",
+    "Windows compatibility: deploy/deploy.ps1 and deploy/install.ps1 provided alongside .sh."
+  ]
+}

@@ -1,0 +1,16 @@
+# CIP index data must never be committed (harness writes temp .cip DBs)
+.cip/
+__pycache__/
+*.pyc
+.pytest_cache/
+.cov*
+htmlcov/
+
+# Budget checkpoint ack files (created by scripts/check_budget.*)
+.budget_*
+
+# Local editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

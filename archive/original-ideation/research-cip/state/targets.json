@@ -1,0 +1,104 @@
+{
+  "targets": [
+    {
+      "id": "cip-indexer-incremental",
+      "path": "lib/cipkg/indexer.py + lib/cipkg/store.py + lib/cipkg/base.py",
+      "rationale": "Incremental sync is CIP's self-updating heart: content-hash vs mtime dirty detection, tier-aware chunking, batched writes + edge rebuild, Windows spawn-safe parallel parse. A missed dirty or orphan row silently lies to every downstream surface (search, audit, gapfill). Highest blast radius.",
+      "priority": 0,
+      "budget": 14,
+      "status": "pending",
+      "invariants": ["H1", "H3", "H4", "H5", "H8", "H11", "H14", "H15"],
+      "outcome": ""
+    },
+    {
+      "id": "cip-store-vector-cache",
+      "path": "lib/cipkg/store.py + lib/cipkg/vecstore.py + lib/cipkg/lancedb_store.py + lib/cipkg/embed.py",
+      "rationale": "SQLite WAL + vector cache (vector_signature / _VEC_CACHE) + FTS5 + sqlite-vec/lancedb backends. Cache invalidation, bulk helpers, snapshot durability, and cross-process correctness directly gate search recall and freshness.",
+      "priority": 1,
+      "budget": 12,
+      "status": "pending",
+      "invariants": ["H1", "H5", "H8", "H11", "H14", "H15"],
+      "outcome": ""
+    },
+    {
+      "id": "cip-retrieve-hybrid",
+      "path": "lib/cipkg/retrieve.py + lib/cipkg/rerank.py + lib/cipkg/vecstore.py + lib/cipkg/context_manager.py",
+      "rationale": "Hybrid FTS ⊕ vectors → RRF → rerank + budgeted context pack. Invariants: every returned chunk exists in chunks table, model-mismatch returns lexical-only fallback, RRF never invents IDs, token budget is honoured. Mirrors H5 paired-read divergence (index vs retrieve).",
+      "priority": 2,
+      "budget": 12,
+      "status": "pending",
+      "invariants": ["H5", "H8", "H11", "H14"],
+      "outcome": ""
+    },
+    {
+      "id": "cip-embed-daemon",
+      "path": "lib/cipkg/embed.py + lib/cipkg/daemon.py + lib/cipkg/vecstore.py",
+      "rationale": "Embedding resolution order: daemon warm RemoteEmbedder vs LocalEmbedder singleton, autostart flag, service_port resolution (embed.service_port → serve.port → 8787, daemon.port drift), dimension mismatch, batch truncation. A wrong fallback silently kills semantic search.",
+      "priority": 3,
+      "budget": 14,
+      "status": "pending",
+      "invariants": ["H1", "H4", "H10", "H12", "H13"],
+      "outcome": ""
+    },
+    {
+      "id": "cip-audit-precision",
+      "path": "lib/cipkg/stack/rules.py + lib/cipkg/stack/audit.py + lib/cipkg/stack/custom_rules.py + lib/cipkg/stack/nextjs.py + lib/cipkg/stack/prisma.py",
+      "rationale": "Audit rule engine: 20+ rules (secrets, DB-N1, hidden exports, Next.js leak, QA-*, ARCH-*). Precision is critical: rules must NOT flag NONPROD, test, .d.ts, dynamic_entry_roots. Stable IDs + auto-close only for enabled rules (BUG-015). False positives destroy trust.",
+      "priority": 4,
+      "budget": 14,
+      "status": "pending",
+      "invariants": ["H1", "H3", "H4", "H8", "H13"],
+      "outcome": ""
+    },
+    {
+      "id": "cip-import-resolution",
+      "path": "lib/cipkg/indexer.py:resolve_import + lib/cipkg/tsconfig.py + lib/cipkg/parsers.py + lib/cipkg/tree_parser.py",
+      "rationale": "Import graph correctness: Python relative dots (.base → ..stack.audit), TS alias via tsconfig baseUrl/paths, Node16 ESM .js→.ts extension stripping, per-directory resolver for monorepos. A wrong edge poisons impact analysis, tested_by, circular detection.",
+      "priority": 5,
+      "budget": 12,
+      "status": "pending",
+      "invariants": ["H3", "H4", "H13"],
+      "outcome": ""
+    },
+    {
+      "id": "cip-gapfill-health",
+      "path": "lib/cipkg/gapfill.py + lib/cipkg/analysis.py + lib/cipkg/store.py:snapshots",
+      "rationale": "Gapfill signals (coverage, dead, circular, blame, env, logs, metrics, deps, api) + analysis.repo_health_report + health scoring (freshness, vector coverage, dead ratio, critical findings) + snapshots. Missing evidence must not default to healthy (H14).",
+      "priority": 6,
+      "budget": 12,
+      "status": "pending",
+      "invariants": ["H5", "H11", "H14", "H15"],
+      "outcome": ""
+    },
+    {
+      "id": "cip-watcher-sync",
+      "path": "lib/cipkg/watcher.py + lib/cipkg/watch.py + lib/cipkg/lock.py + lib/cipkg/vibe_watcher.py + lib/cipkg/indexer.py:sync",
+      "rationale": "File watcher + WriteLock + daemon interval + sync job snapshots. Coalescence, lock contention, event_days vacuum vs snapshots exemption, and re-entrance (sync while syncing) are classic race/idempotency hazards (H12).",
+      "priority": 7,
+      "budget": 10,
+      "status": "pending",
+      "invariants": ["H1", "H11", "H12", "H15"],
+      "outcome": ""
+    },
+    {
+      "id": "cip-memory-consolidation",
+      "path": "lib/cipkg/memory/temporal_graph.py + lib/cipkg/memory/episodic.py + lib/cipkg/memory/consolidation.py + lib/cipkg/learning_system.py + lib/cipkg/session.py",
+      "rationale": "Temporal KG + episodic + procedural memory + consolidation daemon. Invariants: consolidation is idempotent, time-bounded queries respect valid_from/valid_until, episodes never leak PII, 120K checkpoint survives autocompact.",
+      "priority": 8,
+      "budget": 10,
+      "status": "pending",
+      "invariants": ["H1", "H4", "H5", "H11", "H12", "H14"],
+      "outcome": ""
+    },
+    {
+      "id": "cip-server-mcp",
+      "path": "lib/cipkg/server.py + lib/cipkg/web_bridge.py + lib/cipkg/cli.py + lib/cipkg/base.py + lib/cipkg/docs + lib/cipkg/gatekeeper.py",
+      "rationale": "MCP server + Web console (FastAPI) + CLI dispatch + base.repo_root discovery + admission/gatekeeper. Invariants: every CLI command in cli.py has a handler in dispatch_command; repo_root never accepts home dir; web --project/--root preselection validates; server tools expose ontology.json schema.",
+      "priority": 9,
+      "budget": 10,
+      "status": "pending",
+      "invariants": ["H1", "H3", "H4", "H8", "H10", "H13"],
+      "outcome": ""
+    }
+  ]
+}
