@@ -1,138 +1,20 @@
 #!/usr/bin/env node
-/**
- * VIVIM Deep-Research Engine — CLI (v2.0.0)
- *
- * Replaces:
- *   - framework/scripts/check_budget.sh (bash + `bc`, breaks on machines
- *     without bc, silently no-ops on Windows despite the .ps1 twin existing
- *     as a separate file that can drift out of sync)
- *   - the implied `bun run scripts/research-loop.ts next` from
- *     docs/05-usage-guide.md, which was referenced but not present in the
- *     repo (framework/scripts/ only ever contained the two budget scripts)
- *
- * Single Node/TS entry point. No bash/powershell fork needed — this runs
- * identically on Linux, macOS, Windows (via `node` or `bun`).
- *
- * Usage:
- *   node cli.ts init <session-root>
- *   node cli.ts status <session-root>
- *   node cli.ts budget <session-root>
- *   node cli.ts advance <session-root>
- *   node cli.ts verify-evidence <session-root>
- */
-
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { ResearchEngine, FrameworkConfig } from "./engine";
-
-function loadConfig(sessionRoot: string): FrameworkConfig {
-  const configPath = join(sessionRoot, "..", "framework.json");
-  const raw = JSON.parse(readFileSync(configPath, "utf-8"));
-  // Back-compat: v1 framework.json has no hard_stop_percent. Default it to
-  // total_budget_percent so old configs don't silently get an unbounded budget.
-  if (raw.budget && raw.budget.hard_stop_percent === undefined) {
-    raw.budget.hard_stop_percent = raw.budget.total_budget_percent;
-  }
-  return raw as FrameworkConfig;
+import { FrameworkConfig, ResearchEngine } from "./engine";
+function loadConfig(root: string): FrameworkConfig { const path = join(root, "..", "framework.json"); const raw = JSON.parse(readFileSync(path, "utf8")); if (raw.budget && !raw.survivability) throw new Error("Legacy budget config detected. Replace budget with survivability in framework.json."); return raw as FrameworkConfig; }
+function usage(): never { console.error("Usage: node orchestrator/cli.ts <init|status|pressure|resume|checkpoint|complete|advance|verify-evidence> <session-root> [text]"); process.exit(1); }
+async function main() { const [, , command, root, ...rest] = process.argv; if (!command || !root) usage(); const engine = new ResearchEngine(root, loadConfig(root));
+ switch (command) {
+  case "init": console.log(`Session initialized at ${root}; phase=${engine.getState().phase}`); break;
+  case "status": { const s = engine.getState(); console.log(JSON.stringify({ sessionId:s.sessionId, phase:s.phase, candidates:Object.keys(s.candidates).length, repros:Object.keys(s.repros).length, hazards:s.hazards.length, completed:s.completed, pressure:engine.getPressureStatus() }, null, 2)); break; }
+  case "pressure": { const p=engine.getPressureStatus(); console.log(JSON.stringify(p,null,2)); if(p.checkpointRequired) process.exitCode=2; break; }
+  case "resume": { const b=engine.getResumeBrief(); if(b) console.log(b); else console.log("No checkpoint exists for this session."); break; }
+  case "checkpoint": { const brief=rest.join(" ").trim(); if(!brief) { console.error("checkpoint requires a resume brief"); process.exit(1); } console.log(JSON.stringify(engine.writeCheckpoint(brief),null,2)); break; }
+  case "complete": { const note=rest.join(" ").trim(); if(!note) { console.error("complete requires a note"); process.exit(1); } engine.declareObjectiveComplete(note); console.log("Objective marked complete."); break; }
+  case "advance": console.log(`Advanced to phase: ${engine.advancePhase()}`); break;
+  case "verify-evidence": { const chain=engine.validateEvidenceChain(); const integrity=engine.verifyEvidenceIntegrity(); if(chain.ok && integrity.ok) console.log("Evidence chain and integrity OK."); else { console.error(JSON.stringify({ chain, integrity }, null, 2)); process.exitCode=1; } break; }
+  default: usage();
+ }
 }
-
-function fmtPct(n: number): string {
-  return `${n.toFixed(1)}%`;
-}
-
-async function main() {
-  const [, , command, sessionRoot] = process.argv;
-
-  if (!command || !sessionRoot) {
-    console.log(
-      "Usage: node cli.ts <init|status|budget|advance|verify-evidence> <session-root>",
-    );
-    process.exit(1);
-  }
-
-  const config = loadConfig(sessionRoot);
-  const engine = new ResearchEngine(sessionRoot, config);
-
-  switch (command) {
-    case "init": {
-      console.log(`Session initialized at ${sessionRoot}`);
-      console.log(`Phase: ${engine.getState().phase}`);
-      break;
-    }
-
-    case "status": {
-      const state = engine.getState();
-      const budget = engine.getBudgetStatus();
-      console.log(`Session: ${state.sessionId}`);
-      console.log(`Phase: ${state.phase}`);
-      console.log(`Candidates: ${Object.keys(state.candidates).length}`);
-      console.log(`Repros: ${Object.keys(state.repros).length}`);
-      console.log(`Hazards logged: ${state.hazards.length}`);
-      console.log(`Deadends logged: ${state.deadends.length}`);
-      console.log(
-        `Budget: ${fmtPct(budget.spent)} spent / ${fmtPct(budget.hardStop)} hard stop ` +
-          `(${fmtPct(budget.remaining)} remaining)`,
-      );
-      console.log(`Locked: ${budget.locked}`);
-      break;
-    }
-
-    case "budget": {
-      const budget = engine.getBudgetStatus();
-      const bar = renderBudgetBar(budget.spent, budget.hardStop);
-      console.log(bar);
-      if (budget.locked) {
-        console.log("STATUS: LOCKED — hard stop reached. Requires engine.unlockWithSignoff().");
-        process.exitCode = 2;
-      } else if (budget.remaining < budget.hardStop * 0.1) {
-        console.log(`STATUS: WARNING — under 10% budget remaining (${fmtPct(budget.remaining)}).`);
-        process.exitCode = 1;
-      } else {
-        console.log(`STATUS: OK (${fmtPct(budget.remaining)} remaining)`);
-      }
-      break;
-    }
-
-    case "advance": {
-      try {
-        const next = engine.advancePhase();
-        console.log(`Advanced to phase: ${next}`);
-      } catch (err) {
-        console.error(`Cannot advance: ${err instanceof Error ? err.message : err}`);
-        process.exitCode = 1;
-      }
-      break;
-    }
-
-    case "verify-evidence": {
-      const result = engine.validateEvidenceChain();
-      if (result.ok) {
-        console.log("Evidence chain OK — every candidate's linked file exists on disk.");
-      } else {
-        console.error(`Evidence chain BROKEN — ${result.breaks.length} dangling reference(s):`);
-        for (const b of result.breaks) {
-          console.error(`  candidate ${b.candidateId} -> missing ${b.missingPath}`);
-        }
-        process.exitCode = 1;
-      }
-      break;
-    }
-
-    default:
-      console.error(`Unknown command: ${command}`);
-      process.exit(1);
-  }
-}
-
-function renderBudgetBar(spent: number, hardStop: number, width = 40): string {
-  const ratio = Math.min(spent / hardStop, 1);
-  const filled = Math.round(ratio * width);
-  const bar = "█".repeat(filled) + "░".repeat(width - filled);
-  const color = ratio >= 1 ? "\x1b[31m" : ratio >= 0.75 ? "\x1b[33m" : "\x1b[32m";
-  return `${color}[${bar}]\x1b[0m ${fmtPct(spent)} / ${fmtPct(hardStop)}`;
-}
-
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+main().catch(err => { console.error(err instanceof Error ? err.message : err); process.exit(1); });

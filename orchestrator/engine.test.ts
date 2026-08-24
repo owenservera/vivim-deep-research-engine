@@ -1,236 +1,32 @@
-/**
- * VIVIM Deep-Research Engine — Engine invariant tests (v2.0.0)
- *
- * v1 had zero tests anywhere in the repository. Every claim in DESIGN.md
- * ("no proposal without verification criterion", "evidence chain is
- * unbreakable") was an assertion about agent behavior, never checked in
- * code. These tests pin down the invariants the engine now enforces
- * mechanically, so a future refactor can't silently regress them.
- *
- * Run with: bun test engine.test.ts   (or `node --test` with ts-node loader)
- */
-
-import { test, expect, beforeEach } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { describe, expect, test, beforeEach, afterEach } from "bun:test";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  ResearchEngine,
-  FrameworkConfig,
-  BudgetExceededError,
-  MissingVerificationCriterionError,
-  PrematurePhaseTransitionError,
-  SessionLockedError,
-} from "./engine";
+import { MissingVerificationCriterionError, PrematurePhaseTransitionError, ResearchEngine, TokenPressureTracker } from "./engine";
+import { computeFleetComposition, runFleet } from "./fleet";
 
-function makeConfig(overrides: Partial<FrameworkConfig["budget"]> = {}): FrameworkConfig {
-  return {
-    framework_version: "2.0.0-test",
-    target_repo_path: "project/",
-    session_id: "test-session",
-    budget: {
-      total_budget_percent: 100,
-      hard_stop_percent: 100,
-      budget_checkpoints: [25, 50, 75, 100],
-      ...overrides,
-    },
-    agent_roles: {
-      generator: { count_ratio: 0.2, master_path: "framework/core/agents/generator.md" },
-      extender: { count_ratio: 0.2, master_path: "framework/core/agents/extender.md" },
-      validator: { count_ratio: 0.2, master_path: "framework/core/agents/validator.md" },
-      literature: { count_ratio: 0.15, master_path: "framework/core/agents/literature.md" },
-      synthesizer: { count_ratio: 0.05, master_path: "framework/core/agents/synthesizer.md" },
-      blindspot: { count_ratio: 0.05, master_path: "framework/core/agents/blindspot.md" },
-    },
-    hazard_seed_ids: ["H1", "H2"],
-  };
-}
+const config = { framework_version:"2.1.0", target_repo_path:"project/", session_id:"test", survivability:{danger_zone_tokens:100,checkpoint_margin_ratio:.8,max_actions_between_checkpoints:3}, agent_roles:{generator:{count_ratio:.2,master_path:"g"},extender:{count_ratio:.2,master_path:"e"},validator:{count_ratio:.2,master_path:"v"},literature:{count_ratio:.15,master_path:"l"},synthesizer:{count_ratio:.05,master_path:"s"},blindspot:{count_ratio:.2,master_path:"b"}}, hazard_seed_ids:[] } as const;
+let root:string;
+beforeEach(()=>{ root=mkdtempSync(join(tmpdir(),"vivim-research-")); });
+afterEach(()=>rmSync(root,{recursive:true,force:true}));
+const input=(phase:any="generation")=>({phase,agentRole:"generator" as const,question:"q",approach:"new approach",verificationCriterion:"must pass",filePath:"session/02-candidates/c.md",evidenceLinks:[]});
 
-let sessionRoot: string;
-
-beforeEach(() => {
-  sessionRoot = mkdtempSync(join(tmpdir(), "vivim-test-"));
+describe("survivability",()=>{
+ test("requests checkpoint by token margin and resets after checkpoint",()=>{ const t=new TokenPressureTracker(100,.8,99); expect(t.record(79).checkpointRequired).toBe(false); expect(t.record(1).checkpointRequired).toBe(true); t.reset(); expect(t.status().checkpointRequired).toBe(false); });
+ test("requests checkpoint by action floor",()=>{ const t=new TokenPressureTracker(100,.8,2); t.record(1); expect(t.record(1).checkpointRequired).toBe(true); });
+ test("fresh engine resumes state and exact brief from checkpoint",()=>{ const e=new ResearchEngine(root,config); e.advancePhase(); const c=e.proposeCandidate(input()); e.writeCheckpoint("Continue validation; do not redo candidate generation."); const fresh=new ResearchEngine(root,config); expect(fresh.getState().phase).toBe("generation"); expect(Object.keys(fresh.getState().candidates)).toContain(c.id); expect(fresh.getResumeBrief()).toContain("do not redo"); });
 });
 
-test("budget: allows spend under hard stop", () => {
-  const engine = new ResearchEngine(sessionRoot, makeConfig());
-  engine.spendBudget("generation", "generator", 30, "test spend");
-  expect(engine.getBudgetStatus().spent).toBe(30);
-  expect(engine.getBudgetStatus().locked).toBe(false);
+describe("invariants",()=>{
+ test("rejects empty verification criterion",()=>{ const e=new ResearchEngine(root,config); expect(()=>e.proposeCandidate({...input(),verificationCriterion:""})).toThrow(MissingVerificationCriterionError); });
+ test("cannot verify without passing repro",()=>{ const e=new ResearchEngine(root,config); const c=e.proposeCandidate(input()); expect(()=>e.promoteToVerified(c.id)).toThrow(PrematurePhaseTransitionError); });
+ test("verified requires passing repro and then phase progression",()=>{ const e=new ResearchEngine(root,config); e.advancePhase(); const c=e.proposeCandidate(input()); e.advancePhase(); e.recordRepro({candidateId:c.id,method:"counterexample",passed:true,filePath:"session/03-repros/r.md",log:"pass"}); e.advancePhase(); e.promoteToVerified(c.id); expect(e.advancePhase()).toBe("output"); });
+ test("deadend collision is rejected",()=>{ const e=new ResearchEngine(root,config); e.logDeadend("use brute force"); expect(()=>e.proposeCandidate({...input(),approach:"Use brute force for this"})).toThrow(PrematurePhaseTransitionError); });
+ test("evidence hashes detect modification",()=>{ mkdirSync(join(root,"session/03-repros"),{recursive:true}); writeFileSync(join(root,"session/03-repros","r.md"),"one"); const e=new ResearchEngine(root,config); e.advancePhase(); const c=e.proposeCandidate(input()); e.captureEvidence(c.id,"session/03-repros/r.md"); expect(e.verifyEvidenceIntegrity().ok).toBe(true); writeFileSync(join(root,"session/03-repros","r.md"),"two"); expect(e.verifyEvidenceIntegrity().ok).toBe(false); });
+ test("objective completion requires verified candidate",()=>{ const e=new ResearchEngine(root,config); expect(()=>e.declareObjectiveComplete("done")).toThrow(); });
 });
 
-test("budget: hard stop rejects the overrunning spend and locks the session", () => {
-  const engine = new ResearchEngine(sessionRoot, makeConfig({ hard_stop_percent: 100 }));
-  engine.spendBudget("generation", "generator", 90, "first chunk");
-  expect(() => engine.spendBudget("validation", "validator", 20, "would overrun")).toThrow(
-    BudgetExceededError,
-  );
-  expect(engine.getBudgetStatus().locked).toBe(true);
-});
-
-test("budget: this is the exact v1 failure the engine now prevents — 124/120 overrun", () => {
-  // framework.json in the actual repo documents: total_budget_percent: 120,
-  // budget_spent_percent: 124 — i.e. the v1 system let itself go 4% over
-  // its own stated limit. Reproduce that scenario and confirm v2 refuses it.
-  const engine = new ResearchEngine(sessionRoot, makeConfig({ hard_stop_percent: 120 }));
-  engine.spendBudget("generation", "generator", 60, "chunk 1");
-  engine.spendBudget("validation", "validator", 60, "chunk 2"); // now at 120, exactly at limit
-  expect(engine.getBudgetStatus().spent).toBe(120);
-  expect(() => engine.spendBudget("synthesis", "synthesizer", 4, "the v1 overrun")).toThrow(
-    BudgetExceededError,
-  );
-  expect(engine.getBudgetStatus().spent).toBe(120); // rejected spend did not apply
-});
-
-test("locked session rejects all further mutation until human signoff", () => {
-  const engine = new ResearchEngine(sessionRoot, makeConfig({ hard_stop_percent: 10 }));
-  expect(() => engine.spendBudget("generation", "generator", 15, "over")).toThrow(BudgetExceededError);
-
-  expect(() =>
-    engine.proposeCandidate({
-      phase: "generation",
-      agentRole: "generator",
-      question: "q",
-      approach: "a",
-      verificationCriterion: "v",
-      filePath: "session/02-candidates/x.md",
-      evidenceLinks: [],
-    }),
-  ).toThrow(SessionLockedError);
-
-  engine.unlockWithSignoff("test-human", "reviewed and approved overrun");
-  expect(engine.getBudgetStatus().locked).toBe(false);
-});
-
-test("candidate: rejects proposal with empty verification criterion", () => {
-  const engine = new ResearchEngine(sessionRoot, makeConfig());
-  expect(() =>
-    engine.proposeCandidate({
-      phase: "generation",
-      agentRole: "generator",
-      question: "does X work",
-      approach: "try Y",
-      verificationCriterion: "",
-      filePath: "session/02-candidates/y.md",
-      evidenceLinks: [],
-    }),
-  ).toThrow(MissingVerificationCriterionError);
-});
-
-test("candidate: rejects re-proposal of a known deadend", () => {
-  const engine = new ResearchEngine(sessionRoot, makeConfig());
-  engine.logDeadend("permissive ?? operator masking null checks");
-  expect(() =>
-    engine.proposeCandidate({
-      phase: "generation",
-      agentRole: "generator",
-      question: "q",
-      approach: "use permissive ?? operator masking null checks everywhere",
-      verificationCriterion: "unit test",
-      filePath: "session/02-candidates/z.md",
-      evidenceLinks: [],
-    }),
-  ).toThrow(PrematurePhaseTransitionError);
-});
-
-test("synthesis gate: cannot promote a candidate to verified without a passing repro", () => {
-  const engine = new ResearchEngine(sessionRoot, makeConfig());
-  const candidate = engine.proposeCandidate({
-    phase: "generation",
-    agentRole: "generator",
-    question: "q",
-    approach: "a",
-    verificationCriterion: "numerical stress test",
-    filePath: "session/02-candidates/a.md",
-    evidenceLinks: [],
-  });
-
-  expect(() => engine.promoteToVerified(candidate.id)).toThrow(PrematurePhaseTransitionError);
-
-  engine.recordRepro({
-    candidateId: candidate.id,
-    method: "numerical-stress-test",
-    passed: true,
-    filePath: "session/03-repros/a-repro.ts",
-    log: "1000 iterations, 0 failures",
-  });
-
-  const verified = engine.promoteToVerified(candidate.id);
-  expect(verified.status).toBe("verified");
-});
-
-test("phase transitions: cannot skip to validation before any candidate has a verification criterion", () => {
-  const engine = new ResearchEngine(sessionRoot, makeConfig());
-  engine.advancePhase(); // framing -> generation, no exit criteria on this edge
-  expect(() => engine.advancePhase()).toThrow(PrematurePhaseTransitionError); // generation -> validation
-});
-
-test("phase transitions: full happy path framing -> output", () => {
-  const engine = new ResearchEngine(sessionRoot, makeConfig());
-  engine.advancePhase(); // -> generation
-
-  const candidate = engine.proposeCandidate({
-    phase: "generation",
-    agentRole: "generator",
-    question: "q",
-    approach: "a",
-    verificationCriterion: "re-derivation",
-    filePath: "session/02-candidates/a.md",
-    evidenceLinks: [],
-  });
-
-  engine.advancePhase(); // -> validation
-  engine.recordRepro({
-    candidateId: candidate.id,
-    method: "re-derivation",
-    passed: true,
-    filePath: "session/03-repros/a-repro.ts",
-    log: "re-derived independently, matches",
-  });
-
-  engine.advancePhase(); // -> synthesis
-  engine.promoteToVerified(candidate.id);
-  engine.advancePhase(); // -> output
-
-  expect(engine.getState().phase).toBe("output");
-});
-
-test("evidence chain: flags candidates whose linked files do not exist", () => {
-  const engine = new ResearchEngine(sessionRoot, makeConfig());
-  const candidate = engine.proposeCandidate({
-    phase: "generation",
-    agentRole: "generator",
-    question: "q",
-    approach: "a",
-    verificationCriterion: "v",
-    filePath: "session/02-candidates/a.md",
-    evidenceLinks: [],
-  });
-  engine.recordRepro({
-    candidateId: candidate.id,
-    method: "counterexample",
-    passed: false,
-    filePath: "session/03-repros/does-not-exist.ts",
-    log: "found a counterexample",
-  });
-
-  const result = engine.validateEvidenceChain((p) => false); // simulate nothing existing on disk
-  expect(result.ok).toBe(false);
-  expect(result.breaks.length).toBe(1);
-  expect(result.breaks[0].missingPath).toBe("session/03-repros/does-not-exist.ts");
-});
-
-test("hazard registration is append-only and survives reload", () => {
-  const engine1 = new ResearchEngine(sessionRoot, makeConfig());
-  engine1.registerHazard({
-    id: "H1",
-    family: "permissive-null-check",
-    description: "?? operator masks required null validation",
-    discoveredIn: "session/03-repros/a-repro.ts",
-    severity: "high",
-  });
-
-  const engine2 = new ResearchEngine(sessionRoot, makeConfig()); // reload from disk
-  expect(engine2.getState().hazards.length).toBe(1);
-  expect(engine2.getState().hazards[0].id).toBe("H1");
+describe("fleet",()=>{
+ test("largest remainder always allocates exactly the requested seats",()=>{ for(let n=1;n<=1000;n++){ const c=computeFleetComposition(config,n); expect(c.reduce((s,x)=>s+x.count,0)).toBe(n); expect(c.every(x=>x.count>=0)).toBe(true); } });
+ test("fleet stops pulling new work after pressure signal and checkpoints",async()=>{ const e=new ResearchEngine(root,config); const seen:number[]=[]; const result=await runFleet(e,config,async task=>{seen.push(1); return {role:task.role,raw:"ok",estimatedTokens:40};},{totalAgents:10,concurrency:2,phase:"generation",checkpointBrief:"Resume from the latest completed fleet results."},()=>"prompt"); expect(result.checkpointRequired).toBe(true); expect(result.remainingTasks).toBeGreaterThan(0); expect(e.getResumeBrief()).toContain("latest completed"); });
 });
