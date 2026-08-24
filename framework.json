@@ -13,10 +13,10 @@
   "agent_roles": {
     "generator": { "count_ratio": 0.20, "master_path": "framework/core/agents/generator.md" },
     "extender": { "count_ratio": 0.20, "master_path": "framework/core/agents/extender.md" },
-    "validator": { "count_ratio": 0.20, "master_path": "framework/core/agents/validator.md" },
+    "validator": { "count_ratio": 0.15, "master_path": "framework/core/agents/validator.md" },
     "literature": { "count_ratio": 0.15, "master_path": "framework/core/agents/literature.md" },
-    "synthesizer": { "count_ratio": 0.05, "master_path": "framework/core/agents/synthesizer.md" },
-    "blindspot": { "count_ratio": 0.05, "master_path": "framework/core/agents/blindspot.md" }
+    "synthesizer": { "count_ratio": 0.15, "master_path": "framework/core/agents/synthesizer.md" },
+    "blindspot": { "count_ratio": 0.15, "master_path": "framework/core/agents/blindspot.md" }
   },
   "session_config": {
     "framing_template": "framework/templates/FRAMING.md", "output_template": "framework/templates/OUTPUT.md", "deadends_path": "session/deadends.md", "candidates_dir": "session/02-candidates/", "repros_dir": "session/03-repros/", "verified_dir": "session/04-verified/", "state_dir": "session/state/", "opencode_dir": "session/.opencode/"
