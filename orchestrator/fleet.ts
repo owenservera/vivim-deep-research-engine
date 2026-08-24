@@ -7,10 +7,10 @@ export interface FleetOptions { totalAgents: number; concurrency?: number; phase
 export function computeFleetComposition(config: FrameworkConfig, totalAgents: number): FleetComposition[] {
   if (!Number.isInteger(totalAgents) || totalAgents < 1) throw new RangeError("totalAgents must be a positive integer");
   const roles = Object.entries(config.agent_roles) as [AgentRole, { count_ratio: number }][];
-  const sum = roles.reduce((n, [, r]) => n + r.count_ratio, 0); if (Math.abs(sum - 1) > 1e-9) throw new RangeError(`agent role ratios must sum to 1 (got ${sum})`);
-  const base = roles.map(([role, r]) => { const exact = r.count_ratio * totalAgents; return { role, count: Math.floor(exact), remainder: exact - Math.floor(exact) }; });
+  const ratioSum = roles.reduce((n, [, r]) => n + r.count_ratio, 0); if (ratioSum <= 0) throw new RangeError("agent role ratios must contain a positive total");
+  const base = roles.map(([role, r]) => { const exact = (r.count_ratio / ratioSum) * totalAgents; return { role, count: Math.floor(exact), remainder: exact - Math.floor(exact) }; });
   let remaining = totalAgents - base.reduce((n, r) => n + r.count, 0);
-  [...base].sort((a, b) => b.remainder - a.remainder).forEach(r => { if (remaining-- > 0) r.count++; });
+  [...base].sort((a, b) => b.remainder - a.remainder).forEach(r => { if (remaining > 0) { r.count++; remaining--; } });
   return base.map(({ role, count }) => ({ role, count }));
 }
 export async function runFleet(engine: ResearchEngine, config: FrameworkConfig, invoke: AgentInvocation, options: FleetOptions, buildPrompt: (role: AgentRole) => string) {
