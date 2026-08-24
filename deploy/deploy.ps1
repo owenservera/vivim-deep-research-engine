@@ -36,5 +36,12 @@ if (-not (Test-Path "session/deadends.md") -or (Get-Item "session/deadends.md").
 $agentCount = (Get-Content $FrameworkJson | Select-String 'agent_roles').Count
 Write-Host "Agent roles configured: $agentCount"
 
+# Initialize v2 orchestrator (new CLI init — see VIVIM-10X-UPGRADE.md rollout)
+if (Test-Path "orchestrator/cli.ts") {
+    Write-Host "Initializing v2 orchestrator CLI at session root..."
+    # Init is safe to call even if session already initialized.
+    node orchestrator/cli.ts init session/ 2>$null
+}
+
 Write-Host "=== Deploy complete ==="
-Write-Host "Next: read docs/05-usage-guide.md"
+Write-Host "Next: read docs/05-usage-guide.md, then run 'node orchestrator/cli.ts status session/'"

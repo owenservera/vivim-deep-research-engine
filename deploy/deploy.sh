@@ -38,5 +38,13 @@ fi
 # 4. Report framework status
 echo "Agent roles configured: $(cat $FRAMEWORK_JSON | grep -o 'generator\|extender\|validator\|literature\|synthesizer\|blindspot' | wc -l)"
 echo "Hazard seeds: $(cat $FRAMEWORK_JSON | grep hazard_seed_ids -A1 | tail -1)"
+
+# 5. Initialize v2 orchestrator (new CLI init — see VIVIM-10X-UPGRADE.md rollout)
+if [[ -f "orchestrator/cli.ts" ]]; then
+  echo "Initializing v2 orchestrator CLI at session root..."
+  # Init is a no-op if session/state/engine-state.json already exists; safe to call.
+  node orchestrator/cli.ts init session/ || echo "Note: CLI init returned non-zero (likely session already initialized — safe to ignore)."
+fi
+
 echo "=== Deploy complete ==="
-echo "Next step: read docs/05-usage-guide.md, then run framework/scripts/research-loop.ts (or configure session/.opencode/ for CLI use)."
+echo "Next step: read docs/05-usage-guide.md, then run 'node orchestrator/cli.ts status <session-root>' or configure session/.opencode/ for CLI use."

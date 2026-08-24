@@ -12,9 +12,10 @@
 
   "budget": {
     "total_budget_percent": 120,
+    "hard_stop_percent": 120,
     "budget_spent_percent": 124,
     "budget_checkpoints": [25, 50, 75, 100],
-    "note": "Over budget by 4% — finished last queued target at user request. See OWNER.md § Budget."
+    "note": "Over budget by 4% (124/120) — previous run exceeded its own limit. v2 enforces hard_stop_percent (120) so this cannot recur. See VIVIM-10X-UPGRADE.md and docs/05-usage-guide.md."
   },
 
   "agent_roles": {
